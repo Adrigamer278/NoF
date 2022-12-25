@@ -1,5 +1,5 @@
 -- the license is the license is the license is the license is the license is the license is the license is the license is the license is the license 
--- some kind of port of flxObj.shake() ; for a camera you can just put
+-- some kind of port of flxObj.shake() ; for a camera you can just put "Camera" as the obj
 
 local currentObjShakeData = {}
 local function shake(obj,duration,intensity)

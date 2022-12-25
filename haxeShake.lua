@@ -29,7 +29,7 @@ local function shake(obj,duration,intensity)
 	
 	local shake = 0 -- we dont want to kill 240fps players
 	local originalPos = currentObjShakeData[obj].startPos
-	local ind=currentObjShakeData[obj].i -- cancelation token (i think thats how its clalled)
+	local ind=currentObjShakeData[obj].i -- cancelation token (i think thats how its called)
 	while not currentObjShakeData[obj].Completed and currentObjShakeData[obj].i == ind do
 		if currentObjShakeData[obj].Duration>0 then
 			local dt = game["Run Service"].Heartbeat:Wait()

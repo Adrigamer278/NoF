@@ -69,8 +69,8 @@ function Character.new(char,side,cf,anim,HD,remote,locked)
 				self:SetCF(self.followPart.CFrame)
 			end
 		end
-		if self.Parent ~= self:GetCharacter().Parent then
-			self:GetCharacter().Parent=self.Parent
+		if self.Parent ~= self.char.Parent then
+			self.char.Parent=self.Parent
 		end
 	end)
 	

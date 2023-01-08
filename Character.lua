@@ -63,21 +63,22 @@ function Character.new(char,side,cf,anim,HD,remote,locked)
 	}
 	setmetatable(self,Character)
 	
-	if locked then self.locked=true return self end
-	
-	self:AnimatorScriptState(false) -- disable animator script
-	
-	--every physics frame
 	self.HB=(game:GetService("RunService"):IsClient() and game:GetService("RunService").RenderStepped or game:GetService("RunService").Stepped):Connect(function()
 		if self.followPart then
 			if self.startCf ~= self.followPart.CFrame then
 				self:SetCF(self.followPart.CFrame)
 			end
 		end
-		if typeof(self.Parent)=="Instance" then
-			self.char.Parent=self.Parent
+		if self.Parent ~= self:GetCharacter().Parent then
+			self:GetCharacter().Parent=self.Parent
 		end
 	end)
+	
+	if locked then self.locked=true return self end
+	
+	self:AnimatorScriptState(false) -- disable animator script
+	--every physics frame
+	
 	-- replication
 	if self.remote and game:GetService("RunService"):IsServer() then
 		-- connect
@@ -95,7 +96,7 @@ function Character.new(char,side,cf,anim,HD,remote,locked)
 		end)
 	end
 	local newData={Humanoid=false,Animator=false}
-	char.Parent=game.ReplicatedStorage
+	--char.Parent=game.ReplicatedStorage
 	if not self.Humanoid then -- humanoid creation
 		local hum=Instance.new("Humanoid")
 		hum.Parent=char
@@ -118,13 +119,16 @@ function Character.new(char,side,cf,anim,HD,remote,locked)
 		local da=self:PreloadAnim(anim) -- also preloads the rig
 		self.currentAnim=anim
 		self:UnloadRig()
-		self:LoadRig(animData)
+		self:LoadRig(animData,da)
 		local preloadedAnim=da
 		local animations=preloadedAnim.anims
 		if animData:GetAttribute("Mic") and not self.CustomRig then -- rig has the mic created on preload
-			self.micData = self:CreateMicro(self.char,animData)
+			self.micData = self:CreateMicro(self:GetCharacter(),animData)
 		end
+		self:triggerModule("onUnload")
 		self.animData=preloadedAnim.animData
+		self.curModule=animData:FindFirstChild("Handler") and require(animData.Handler:Clone()) or nil
+		self:triggerModule("onLoad",self:GetCharacter(),self)
 		self.BeatDance=preloadedAnim.isBeatDance and true or false
 		for name,anims in pairs(animations) do
 			self.Anims[name]=anims
@@ -142,8 +146,17 @@ function Character:AnimatorScriptState(bool:boolean)
 	end
 end
 
-function Character:triggerModule()
+function Character:triggerModule(name,...)
 	-- for modules stuff with animations :v
+	local args={...}
+	if self.curModule then
+		print("triggering call: "..name)
+		task.spawn(function()
+			pcall(function()
+				self.curModule[name](table.unpack(args))
+			end)
+		end)
+	end
 end
 
 function Character:triggerRemote(...)
@@ -217,7 +230,9 @@ end
 
 function Character:CreateMicro(char,animFolder)
 	local mic,motor = getMicro()
+	print(char)
 	local char= char or self.CustomRig or self.char
+	print(char)
 	local par=animFolder:GetAttribute("MicAttach")
 	if par then
 		if string.split(par,"/")>1 then
@@ -226,12 +241,16 @@ function Character:CreateMicro(char,animFolder)
 			par=char:FindFirstChild(par)
 		end
 	end
-	mic.Parent = par or char[animFolder:GetAttribute("FlipMic") and (animFolder:GetAttribute("R6") and "LeftArm" or "LeftHand") or (animFolder:GetAttribute("R6") and "RightArm" or "RightHand")]
+	local flipped = animFolder:GetAttribute("FlipMic")
+	if animFolder:FindFirstChild(self.side) and (animFolder:FindFirstChild(self.side):GetAttribute("FlipMic")~=nil) then
+		flipped = animFolder:FindFirstChild(self.side):GetAttribute("FlipMic") 
+	end
+	mic.Parent = par or char[flipped and (animFolder:GetAttribute("R6") and "Left Arm" or "LeftHand") or (animFolder:GetAttribute("R6") and "Right Arm" or "RightHand")]
 	motor.Name = "Mic6D"
 	motor.Parent = mic
-	motor.Part0 =par or  char[animFolder:GetAttribute("FlipMic") and (animFolder:GetAttribute("R6") and "LeftArm" or "LeftHand") or (animFolder:GetAttribute("R6") and "RightArm" or "RightHand")]
+	motor.Part0 =par or  char[flipped and (animFolder:GetAttribute("R6") and "Left Arm" or "LeftHand") or (animFolder:GetAttribute("R6") and "Right Arm" or "RightHand")]
 	motor.Part1 = mic
-	motor.C1 = CFrame.new(0,0.25,0.35) --offset
+	motor.C1 = animFolder:GetAttribute("R6") and CFrame.new(0,1.05,0.35) or CFrame.new(0,0.25,0.35) --offset
 	return{Mic=mic,Motor=motor,Char=char}
 end
 
@@ -256,19 +275,19 @@ end
 
 function Character:PreloadRig(animData)
 	if self.locked then return end
-	if animData and animData:GetAttribute("Character") ~= "" and animData:GetAttribute("Character") and not self.preloadedRigs[animData:GetAttribute("Character")] then
+	if animData and ((animData:GetAttribute("R6") and not self.preloadedRigs["R6Awesome"]) or (animData:GetAttribute("Character") ~= "" and animData:GetAttribute("Character") and not self.preloadedRigs[animData:GetAttribute("Character")])) then
 		local preloadedData={}
 		preloadedData.isRig = false
 		preloadedData.isR6 = false
 		preloadedData.Hidden=false
 		local isR6=animData:GetAttribute("R6")
-		local hasChar=animData:GetAttribute("Character") or ""
+		local hasChar=animData:GetAttribute("Character") or nil
 		local hide=animData:GetAttribute("Hide") or animData:GetAttribute("HideCharacter")
 		if hide then
 			preloadedData.Hidden=true
 		end
-		hasChar=game:GetService("ReplicatedStorage").Characters:FindFirstChild(hasChar)
-		if (hasChar) or (isR6 and self.Humanoid.RigType == Enum.RigType.R15 and not hasChar) then
+		hasChar=game:GetService("ReplicatedStorage").Characters:FindFirstChild(hasChar or "")
+		if (hasChar) or (isR6 and self.Humanoid.RigType == Enum.HumanoidRigType.R15 and not hasChar) then
 			local char=nil
 			if hasChar then
 				-- has custom char/rig // apply
@@ -276,8 +295,9 @@ function Character:PreloadRig(animData)
 				char=preloadedData.Rig
 				preloadedData.isRig=true
 
-			elseif (isR6 and self.Humanoid.RigType == Enum.RigType.R15 and not hasChar) then
+			elseif (isR6 and self.Humanoid.RigType == Enum.HumanoidRigType.R15 and not hasChar) then
 				-- is r15, convert to r6
+				print("R6!")
 				preloadedData.Rig=game:GetService("ReplicatedStorage").Characters.DefaultR6:Clone()
 				preloadedData.isR6=true
 				char=preloadedData.Rig
@@ -299,12 +319,12 @@ function Character:PreloadRig(animData)
 			end
 			
 			-- mic
-			
 			if animData:GetAttribute("Mic") then
 				preloadedData.micData = self:CreateMicro(preloadedData.Rig,animData)
 			end
 
 			task.spawn(function() -- humanoid STUFF
+				if char:GetAttribute("NoDescription") then return end
 				local Motor6DS = {}
 				for _,descendant in pairs(char:GetDescendants()) do -- store motor6d to reload / reasign
 					if descendant:IsA("Motor6D") then
@@ -331,7 +351,7 @@ function Character:PreloadRig(animData)
 				end
 
 				for motor6d,dataer in pairs(Motor6DS) do -- reasign motor6d
-					if motor6d:IsA("Highlight") then
+					if motor6d:IsA("Highlight") then -- reasign highlights
 						motor6d.Adornee = getInstance(char,dataer[1])
 					else
 						motor6d.Part0 = getInstance(char,dataer[1])
@@ -340,14 +360,15 @@ function Character:PreloadRig(animData)
 				end
 			end)
 		end
-		self.preloadedRigs[animData:GetAttribute("Character")]=preloadedData
+		self.preloadedRigs[isR6 and "R6Awesome" or animData:GetAttribute("Character")]=preloadedData
+		print(preloadedData)
 		return preloadedData
 	end
 end
 
 function Character:LoadRig(animData)
 	-- LOAD RIG // ANIM DATA!
-	local rigData=self.preloadedRigs[animData:GetAttribute("Character")] or (not print"Preloading unloaded rig // Rig wasn't found") and self:PreloadRig(animData)
+	local rigData= self.preloadedRigs[animData:GetAttribute("R6") and "R6Awesome" or animData:GetAttribute("Character")] or (not print"Preloading unloaded rig // Rig wasn't found") and self:PreloadRig(animData)
 	if rigData then
 		if rigData.Hidden or rigData.Rig then
 			for i,v:BasePart in pairs(self.char:GetDescendants()) do
@@ -359,7 +380,8 @@ function Character:LoadRig(animData)
 		local rigFolder=self.char:FindFirstChild("Rig") or Instance.new"Folder"
 		rigFolder.Name="Rig"
 		rigFolder.Parent=self.char
-		rigData.Rig:SetPrimaryPartCFrame(self.char.PrimaryPart.CFrame)
+		rigData.Rig.PrimaryPart.Anchored=true;
+		rigData.Rig:PivotTo(self.char.PrimaryPart.CFrame)
 		for i,v in pairs(rigData.Rig:GetDescendants()) do
 			if v:IsA("Highlight") then
 				v.Enabled = true
@@ -379,7 +401,8 @@ function Character:LoadRig(animData)
 end
 
 function Character:UnloadRig()
-	if self.CustomRig then self.CustomRig.Parent=game.ReplicatedStorage
+	if self.CustomRig then
+		self.CustomRig.Parent=game.ReplicatedStorage
 		local rigFolder=self.char:FindFirstChild("Rig")
 		if rigFolder then rigFolder:Destroy() end
 		for i,v in pairs(self.CustomRig:GetDescendants()) do
@@ -413,6 +436,9 @@ end
 function Character:Destroy()
 	self.Destroyed=true
 	self.locked=true
+	if self.char then
+		self.char.Parent = workspace
+	end
 	self:UnloadRig()
 	for _,data in pairs(self.preloadedRigs) do
 		data.Rig:Destroy()
@@ -431,17 +457,20 @@ function Character:Destroy()
 			anim:Stop(0)
 		end		
 	end
-	
 	for _,stuff in pairs(self.missStuff or {}) do
+		pcall(function()
+			stuff.Enabled=false
+		end)
 		pcall(function()
 			stuff:Destroy()
 		end)
 	end
 	
+	if self.CustomRig then
+		self.CustomRig:Destroy()
+	end
+	
 	if self.destroyChar then
-		if self.CustomRig then
-			self.CustomRig:Destroy()
-		end
 		if self.char then
 			self.char:Destroy()
 		end
@@ -504,7 +533,7 @@ function Character:isIdle(track)
 	end
 end
 
-function Character:PlayAnimation(name,force,fromDance,prefix)
+function Character:PlayAnimation(name,force,fromDance,prefix,ghost)
 	force=true
 	if self.locked then return end
 	if self:isIdle(name) and not fromDance then return self:Dance() end
@@ -532,7 +561,6 @@ function Character:PlayAnimation(name,force,fromDance,prefix)
 			end
 			self.tracksPlayed +=1
 			self:StopCurrentTracks()
-			self:triggerRemote("Animate",name,force,prefix)
 			if prefix=="MISS" then
 				local tab = {}
 				local misser = game:GetService("ReplicatedStorage").Assets.Missing:Clone()
@@ -554,6 +582,8 @@ function Character:PlayAnimation(name,force,fromDance,prefix)
 		end
 		local curanimnum = self.tracksPlayed
 		track:AdjustSpeed(self.Anims[name]:GetAttribute("Speed")or 1)
+		self:triggerRemote("Animate",name,force,prefix)
+		self:triggerModule("PlayAnimation",name,prefix,force)
 		track:SetAttribute("Playing",true)
 		track.TimePosition=0
 		track:Play(0)
@@ -575,6 +605,7 @@ function Character:PlayAnimation(name,force,fromDance,prefix)
 				track:Stop(0)
 				track:SetAttribute("Playing",false)
 				self:triggerRemote("PropLoad","Idle",true)
+				self:triggerModule("PlayAnimation","Idle",nil,true)
 			end
 		end)		
 	else
@@ -596,7 +627,7 @@ function Character:IsSinging()
 	return false
 end
 
-function Character:SetCF(cf) -- set the cf
+function Character:SetCF(cf) -- set the START CF
 	cf=cf or self.startCf
 	self.startCf=cf
 	self.char:SetPrimaryPartCFrame(cf*self.animOffset)
@@ -685,10 +716,10 @@ function Character:ChangeAnim(anim)
 		self.currentAnim=anim
 		self:UnloadRig()
 		da.anims["Idle"]:Play(0)
-		self:LoadRig(animData)
+		self:LoadRig(animData,da)
 		self:UnloadMic(self.micData)
 		if animData:GetAttribute("Mic") and not self.CustomRig then
-			self.micData = self:CreateMicro(self.char,animData)
+			self.micData = self:CreateMicro(self:GetCharacter(),animData)
 		end
 		local preloadedAnim=da
 		local animations=preloadedAnim.anims
@@ -698,7 +729,10 @@ function Character:ChangeAnim(anim)
 			anims:Stop(0)
 			self.Anims[name]=anims
 		end
+		self:triggerModule("onUnload")
 		self.animData=preloadedAnim.animData
+		self.curModule=animData:FindFirstChild("Handler") and require(animData.Handler:Clone()) or nil
+		self:triggerModule("onLoad",self:GetCharacter(),self)
 		self.BeatDance=preloadedAnim.isBeatDance and true or false
 		for name,anim in pairs(oldAnims) do -- unload old anims
 			anim:Stop(0)
